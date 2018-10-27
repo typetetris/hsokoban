@@ -181,7 +181,7 @@ right = keypressEvent KeycodeRight (movePlayer Main.Right)
 
 renderWin :: Font.Font -> IO Surface
 renderWin font = do
-  Font.solid font (V4 255 255 0 255) "WIN!"
+  Font.blended font (V4 255 255 0 255) "WIN!"
   
 
 main :: IO ()
@@ -199,7 +199,7 @@ main = do
   selectortexture <-  loadTexture renderer (datapath </> "images" </> "selector.png")
   startexture <-  loadTexture renderer (datapath </> "images" </> "yellow-star.png")
   princess <- loadTexture renderer (datapath </> "images" </> "Princess.png")
-  font <- Font.load (datapath </> "fonts" </> "overpass-extrabold.otf") 24
+  font <- Font.load (datapath </> "fonts" </> "overpass-extrabold.otf") 96
 
   let startGameState = GameState { levelSet = levels 
                                  , actualLevel = 0
