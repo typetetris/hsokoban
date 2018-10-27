@@ -7,7 +7,7 @@ import SDL.Input.Keyboard
 import SDL.Vect (Point(..))
 import Linear (V4(..))
 import Foreign.C.Types (CInt(..))
-import qualified Paths_planetcutetest as Paths
+import qualified Paths_hsokoban as Paths
 import System.FilePath
 import System.Exit
 import qualified Data.Map.Strict as Map
