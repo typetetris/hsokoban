@@ -4,6 +4,7 @@ cabal-version: >=1.10
 build-type: Simple
 data-files:
       images/*.png
+      fonts/*.otf
 
 executable hsokoban
   hs-source-dirs: .
@@ -14,6 +15,7 @@ executable hsokoban
     , base
     , sdl2
     , sdl2-image
+    , sdl2-ttf
     , linear
     , vector
     , containers

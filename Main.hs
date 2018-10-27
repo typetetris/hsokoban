@@ -4,6 +4,7 @@ module Main where
 import SDL
 import SDL.Image
 import SDL.Input.Keyboard
+import qualified SDL.Font as Font
 import SDL.Vect (Point(..))
 import Linear (V4(..))
 import Foreign.C.Types (CInt(..))
@@ -15,6 +16,8 @@ import Data.Map.Strict (Map)
 import LevelReader (readLevels, Level(..), Coord2D(..), Element(..))
 import Data.Foldable (foldl', traverse_)
 import Data.List (sort)
+import Data.Monoid (All(..))
+import Control.Monad (when)
 
 data Block = Selector | Stone | Grass | Water | Princess | Rock | Star deriving (Eq, Ord, Show)
 data Coord = Coord { x :: CInt
@@ -138,6 +141,15 @@ nextInDirection Down       (Coord x y z) = Coord x     (y-1) z
 nextInDirection Main.Left  (Coord x y z) = Coord (x-1) y     z
 nextInDirection Main.Right (Coord x y z) = Coord (x+1) y     z
 
+checkWin :: GameState -> Bool
+checkWin GameState{..} = doIt world
+  where doIt World{..} = getAll $ Map.foldMapWithKey checkField content
+        checkField (Coord _ _ 0) _ = All True
+        checkField _ e
+            | Rock `elem` e && Selector `elem` e = All True
+            | Rock `elem` e = All False
+            | otherwise = All True
+
 movePlayer :: Direction -> GameState -> GameState
 movePlayer d gs@GameState{..} = gs { world = world { content = doIt } }
  where m     = content world
@@ -167,9 +179,15 @@ down = keypressEvent KeycodeDown (movePlayer Down)
 left = keypressEvent KeycodeLeft (movePlayer Main.Left)
 right = keypressEvent KeycodeRight (movePlayer Main.Right)
 
+renderWin :: Font.Font -> IO Surface
+renderWin font = do
+  Font.solid font (V4 255 255 0 255) "WIN!"
+  
+
 main :: IO ()
 main = do
   initializeAll
+  Font.initialize
   window <- createWindow "planetcutetest" defaultWindow
   renderer <- createRenderer window (-1) defaultRenderer
   levels <- readLevels "levels.txt"
@@ -181,6 +199,7 @@ main = do
   selectortexture <-  loadTexture renderer (datapath </> "images" </> "selector.png")
   startexture <-  loadTexture renderer (datapath </> "images" </> "yellow-star.png")
   princess <- loadTexture renderer (datapath </> "images" </> "Princess.png")
+  font <- Font.load (datapath </> "fonts" </> "overpass-extrabold.otf") 24
 
   let startGameState = GameState { levelSet = levels 
                                  , actualLevel = 0
@@ -198,6 +217,7 @@ main = do
                                    ]) -- way to clever and ugly
     setRendererSize renderer (world gs)
     clear renderer
+
     drawWorld renderer (\x -> case x of
                                 Stone -> stonetexture
                                 Water -> watertexture
@@ -206,7 +226,12 @@ main = do
                                 Rock -> rocktexture
                                 Star -> startexture
                                 Selector -> selectortexture)
-
               (world gs)
+
+    when (checkWin gs) $ do
+       s <- renderWin font 
+       t <- createTextureFromSurface renderer s
+       copy renderer t Nothing Nothing
+
     present renderer
     return gs

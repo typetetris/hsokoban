@@ -5,7 +5,7 @@ let
   inherit (nixpkgs) pkgs;
 
   f = { mkDerivation, base, containers, filepath, linear, protolude
-      , sdl2, sdl2-image, stdenv, text, vector, megaparsec
+      , sdl2, sdl2-image, stdenv, text, vector, megaparsec, sdl2-ttf
       }:
       mkDerivation {
         pname = "hsokoban";
@@ -15,7 +15,7 @@ let
         isExecutable = true;
         executableHaskellDepends = [
           base containers filepath linear protolude sdl2 sdl2-image text
-          vector megaparsec
+          vector megaparsec sdl2-ttf
         ];
         license = stdenv.lib.licenses.unfree;
         hydraPlatforms = stdenv.lib.platforms.none;
