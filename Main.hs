@@ -188,7 +188,7 @@ main :: IO ()
 main = do
   initializeAll
   Font.initialize
-  window <- createWindow "planetcutetest" defaultWindow
+  window <- createWindow "planetcutetest" defaultWindow {windowResizable = True}
   renderer <- createRenderer window (-1) defaultRenderer
   levels <- readLevels "levels.txt"
   datapath <- Paths.getDataDir
