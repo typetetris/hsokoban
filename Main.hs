@@ -19,6 +19,9 @@ import Data.List (sort)
 import Data.Monoid (All(..))
 import Control.Monad (when)
 
+mkRect :: CInt -> CInt -> CInt -> CInt -> Rectangle CInt
+mkRect x y w h = Rectangle (P (V2 x y)) (V2 w h)
+
 data Block = Selector | Stone | Grass | Water | Princess | Rock | Star deriving (Eq, Ord, Show)
 data Coord = Coord { x :: CInt
                    , y :: CInt
@@ -31,8 +34,8 @@ data World = World { width :: CInt
                    , content :: Map Coord [Block]
                    } deriving (Eq, Show, Ord)
 
-drawWorld :: Renderer -> (Block -> Texture) -> World -> IO ()
-drawWorld renderer texture world =
+drawWorld :: Renderer -> RendererSize -> (Block -> Texture) -> World -> IO ()
+drawWorld renderer rsize texture world =
   let
     heightInPixel = (height world - 1) * 80 + (depth world - 1) * 160
   in sequence_ $ do
@@ -41,10 +44,34 @@ drawWorld renderer texture world =
       row    <- reverse [0..(depth world)-1]
       case Map.lookup (Coord column row layer) (content world) of
         Nothing    -> return $ return ()
-        Just xs -> return $ traverse_ (\bt -> copy renderer (texture bt) Nothing (Just (Rectangle (P (V2 (200*column) (heightInPixel - layer * 80 - row * 160))) (V2 214 354)))) xs
+        Just xs -> return $ traverse_ (\bt -> copy renderer (texture bt) Nothing (Just $ toRenderer (WorldCoords $ Rectangle (P (V2 (200*column) (heightInPixel - layer * 80 - row * 160))) (V2 214 354)))) xs
+  where
+    toRenderer r = let (RendererCoords r2) = scaleToRenderer (worldSize world) r rsize in r2
 
-setRendererSize :: Renderer -> World -> IO ()
-setRendererSize renderer (World w d h _) = rendererLogicalSize renderer $= Just (V2 (w*214) (354+(d-1)*160+(h-1)*80))
+worldSize :: World -> WorldSize
+worldSize (World w d h _) = WorldSize $ V2 (w*214) (354+(d-1)*160+(h-1)*80)
+
+newtype RendererSize = RendererSize (Rectangle CInt)
+newtype WorldSize = WorldSize (V2 CInt)
+newtype RendererCoords = RendererCoords (Rectangle CInt)
+newtype WorldCoords = WorldCoords (Rectangle CInt)
+
+scaleToRenderer :: WorldSize -> WorldCoords -> RendererSize -> RendererCoords
+scaleToRenderer (WorldSize    (V2 wwidth wheight))
+                (WorldCoords  (Rectangle (P (V2 wx wy)) (V2 width height)))
+                (RendererSize (Rectangle (P (V2 roffx roffy)) (V2 rwidth rheight)))
+                = let scalex  = fromIntegral rwidth / fromIntegral wwidth
+                      scaley  = fromIntegral rheight / fromIntegral wheight
+                      sx      = scale scalex wx
+                      sy      = scale scaley wy
+                      swidth  = scale scalex width
+                      sheight = scale scaley height
+                  in RendererCoords $ Rectangle (P (V2 (sx+roffx) (sy+roffy))) (V2 swidth sheight)
+  where
+    scale = myScale 
+
+myScale :: Double -> CInt -> CInt
+myScale f i = truncate $ f * fromIntegral i
 
 appLoop :: a -> (Event -> a -> IO a) -> IO ()
 appLoop gs fun = do
@@ -128,10 +155,7 @@ prevLevel = keypressEvent KeycodeP $ \gs@GameState{..} ->
 
 reloadLevel :: Event -> GameState -> GameState
 reloadLevel = keypressEvent KeycodeR $ \gs@GameState{..} ->
-    GameState { levelSet = levelSet
-              , actualLevel = actualLevel
-              , world = level2World $ levelSet !! actualLevel
-              }
+    GameState { world = level2World $ levelSet !! actualLevel , ..  }
 
 data Direction = Up | Down | Left | Right deriving (Eq, Show, Ord)
 
@@ -183,6 +207,16 @@ renderWin :: Font.Font -> IO Surface
 renderWin font = do
   Font.blended font (V4 255 255 0 255) "WIN!"
   
+getRendererSize :: WorldSize -> CInt -> CInt -> CInt -> RendererSize
+getRendererSize (WorldSize (V2 wwidth wheight)) woffx width height =
+  let scalex = fromIntegral width / fromIntegral wwidth
+      scaley = fromIntegral height / fromIntegral wheight
+      scale  = min scalex scaley
+      cwidth = myScale scale wwidth 
+      cheight = myScale scale wheight 
+      woffx2 = abs (cwidth - width) `div` 2
+      woffy2 = abs (cheight - height) `div` 2
+  in RendererSize (Rectangle (P (V2 (woffx + woffx2) woffy2)) (V2 cwidth cheight))
 
 main :: IO ()
 main = do
@@ -201,10 +235,14 @@ main = do
   princess <- loadTexture renderer (datapath </> "images" </> "Princess.png")
   font <- Font.load (datapath </> "fonts" </> "overpass-extrabold.otf") 96
 
+  -- :levelRenderTexture <- createTexture renderer RGB888 TextureAccessTarget (V2 x y)
+
   let startGameState = GameState { levelSet = levels 
                                  , actualLevel = 0
                                  , world = level2World $ levels !! 0
                                  }
+  (V2 width height) <- get $ windowSize window
+
   appLoop startGameState $ \event gs' -> do
     let gs = foldl' (flip ($)) gs' (map ($ event)
                                    [ nextLevel
@@ -215,10 +253,15 @@ main = do
                                    , right
                                    , left
                                    ]) -- way to clever and ugly
-    setRendererSize renderer (world gs)
-    clear renderer
 
-    drawWorld renderer (\x -> case x of
+    (V2 wwidth wheight) <- get $ windowSize window
+    let rsize = getRendererSize (worldSize (world gs)) (myScale (1/4) wwidth) (myScale (3/4) wwidth) wheight
+
+    clear renderer
+    rendererDrawColor renderer $= (V4 255 0 0 255)
+    fillRect renderer (Just (Rectangle (P (V2 0 0)) (V2 (myScale (1/4) wwidth) wheight)))
+    rendererDrawColor renderer $= (V4 0 0 0 255)
+    drawWorld renderer rsize (\x -> case x of
                                 Stone -> stonetexture
                                 Water -> watertexture
                                 Grass -> grasstexture
