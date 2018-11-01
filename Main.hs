@@ -18,6 +18,9 @@ import Data.Foldable (foldl', traverse_)
 import Data.List (sort)
 import Data.Monoid (All(..))
 import Control.Monad (when)
+import qualified Data.Text as Text
+import Data.Text (Text)
+import Control.Monad (foldM_)
 
 mkRect :: CInt -> CInt -> CInt -> CInt -> Rectangle CInt
 mkRect x y w h = Rectangle (P (V2 x y)) (V2 w h)
@@ -113,6 +116,7 @@ data GameState = GameState {
     levelSet :: [Level]
   , actualLevel :: Int
   , world :: World
+  , moves :: Int
   } deriving (Eq, Ord, Show)
 
 getPrincessPos :: Map Coord [Block] -> Coord
@@ -141,6 +145,7 @@ nextLevel = keypressEvent KeycodeN $ \gs@GameState{..} ->
     GameState { levelSet = levelSet
               , actualLevel = actualLevel + 1
               , world = level2World $ levelSet !! (actualLevel + 1)
+              , moves = 0
               }
               else gs
 
@@ -150,12 +155,13 @@ prevLevel = keypressEvent KeycodeP $ \gs@GameState{..} ->
     GameState { levelSet = levelSet
               , actualLevel = actualLevel - 1
               , world = level2World $ levelSet !! (actualLevel - 1)
+              , moves = 0
               }
               else gs
 
 reloadLevel :: Event -> GameState -> GameState
 reloadLevel = keypressEvent KeycodeR $ \gs@GameState{..} ->
-    GameState { world = level2World $ levelSet !! actualLevel , ..  }
+    GameState { world = level2World $ levelSet !! actualLevel , moves = 0, ..  }
 
 data Direction = Up | Down | Left | Right deriving (Eq, Show, Ord)
 
@@ -175,7 +181,7 @@ checkWin GameState{..} = doIt world
             | otherwise = All True
 
 movePlayer :: Direction -> GameState -> GameState
-movePlayer d gs@GameState{..} = gs { world = world { content = doIt } }
+movePlayer d gs@GameState{..} = gs { world = world { content = doIt }, moves = moves + doItMoves }
  where m     = content world
        pPos  = getPrincessPos m
        nPos  = nextInDirection d pPos
@@ -196,6 +202,11 @@ movePlayer d gs@GameState{..} = gs { world = world { content = doIt } }
                      (False, True, True) -> moveBox . movePrincess $ m 
                      _ -> m
 
+       doItMoves :: Int
+       doItMoves = case (coordFree m nPos, coordBox m nPos, coordFree m nnPos) of
+                     (True, _, _) -> 1
+                     (False, True, True) -> 1
+                     _ -> 0
 
 up, down, left, right :: Event -> GameState -> GameState
 up = keypressEvent KeycodeUp (movePlayer Up)
@@ -217,6 +228,18 @@ getRendererSize (WorldSize (V2 wwidth wheight)) woffx width height =
       woffx2 = abs (cwidth - width) `div` 2
       woffy2 = abs (cheight - height) `div` 2
   in RendererSize (Rectangle (P (V2 (woffx + woffx2) woffy2)) (V2 cwidth cheight))
+
+renderInfo :: Font.Font -> Renderer -> Int -> Int -> Int -> Rectangle CInt -> IO ()
+renderInfo font renderer level levelCount moves (Rectangle (P (V2 x y)) (V2 w h))  = do
+     let lines = [ "Level", Text.pack (show level), "von", Text.pack (show levelCount), "Züge", Text.pack (show moves) ]
+     let lineHeight = h `div` fromIntegral (length lines)
+     foldM_ (\acc line -> renderLine line acc lineHeight >> return (acc+1)) 0 lines
+    where
+      renderLine :: Text -> Int -> CInt -> IO ()
+      renderLine line lineNumber lineHeight = do
+        levelS <- Font.blended font (V4 255 255 255 255) line
+        t <- createTextureFromSurface renderer levelS
+        copy renderer t Nothing (Just (mkRect x (y+fromIntegral lineNumber*lineHeight) w lineHeight))
 
 main :: IO ()
 main = do
@@ -240,6 +263,7 @@ main = do
   let startGameState = GameState { levelSet = levels 
                                  , actualLevel = 0
                                  , world = level2World $ levels !! 0
+                                 , moves = 0
                                  }
   (V2 width height) <- get $ windowSize window
 
@@ -259,7 +283,9 @@ main = do
 
     clear renderer
     rendererDrawColor renderer $= (V4 255 0 0 255)
-    fillRect renderer (Just (Rectangle (P (V2 0 0)) (V2 (myScale (1/4) wwidth) wheight)))
+
+    renderInfo font renderer (actualLevel gs) (length (levelSet gs)) (moves gs) (mkRect 0 0 (myScale (1/4) wwidth) wheight)
+
     rendererDrawColor renderer $= (V4 0 0 0 255)
     drawWorld renderer rsize (\x -> case x of
                                 Stone -> stonetexture

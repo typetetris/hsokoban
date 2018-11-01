@@ -22,6 +22,7 @@ executable hsokoban
     , text
     , filepath
     , megaparsec
+    , text
   other-modules:
       Paths_hsokoban
     , LevelReader
