@@ -238,8 +238,20 @@ renderInfo font renderer level levelCount moves (Rectangle (P (V2 x y)) (V2 w h)
       renderLine :: Text -> Int -> CInt -> IO ()
       renderLine line lineNumber lineHeight = do
         levelS <- Font.blended font (V4 255 255 255 255) line
+        sD <- surfaceDimensions levelS
         t <- createTextureFromSurface renderer levelS
-        copy renderer t Nothing (Just (mkRect x (y+fromIntegral lineNumber*lineHeight) w lineHeight))
+        copy renderer t Nothing (Just $ centerRectangle sD (mkRect x (y+fromIntegral lineNumber*lineHeight) w lineHeight))
+
+centerRectangle (V2 sw sh)
+                (Rectangle (P (V2 tx ty)) (V2 tw th)) =
+  let scalex = fromIntegral tw / fromIntegral sw
+      scaley = fromIntegral th / fromIntegral sh
+      scale  = minimum [ scalex, scaley, 1 ]
+      scaledx = myScale scale sw
+      scaledy = myScale scale sh
+      wx = (tw - scaledx) `div` 2
+      wy = (th - scaledy) `div` 2
+  in mkRect (tx+wx) (ty+wy) scaledx scaledy
 
 main :: IO ()
 main = do
