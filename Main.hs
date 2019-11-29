@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings, RecordWildCards #-}
 module Main where
 
 import SDL
@@ -17,10 +16,17 @@ import LevelReader (readLevels, Level(..), Coord2D(..), Element(..))
 import Data.Foldable (foldl', traverse_)
 import Data.List (sort)
 import Data.Monoid (All(..))
-import Control.Monad (when)
+import Control.Monad (when, foldM_)
+import Control.Exception (catch, SomeException)
 import qualified Data.Text as Text
 import Data.Text (Text)
-import Control.Monad (foldM_)
+import Data.Maybe (fromMaybe, maybe)
+
+import Control.Monad.Extra (firstJustM)
+import Control.Monad.IO.Class (MonadIO)
+import Text.Pretty.Simple
+
+import System.IO
 
 mkRect :: CInt -> CInt -> CInt -> CInt -> Rectangle CInt
 mkRect x y w h = Rectangle (P (V2 x y)) (V2 w h)
@@ -30,7 +36,7 @@ data Coord = Coord { x :: CInt
                    , y :: CInt
                    , z :: CInt
                    } deriving (Eq, Show, Ord)
-                    
+
 data World = World { width :: CInt
                    , depth :: CInt
                    , height :: CInt
@@ -39,17 +45,30 @@ data World = World { width :: CInt
 
 drawWorld :: Renderer -> RendererSize -> (Block -> Texture) -> World -> IO ()
 drawWorld renderer rsize texture world =
-  let
-    heightInPixel = (height world - 1) * 80 + (depth world - 1) * 160
-  in sequence_ $ do
-      layer  <- [0..(height world)-1]
-      column <- [0..(width world)-1]
-      row    <- reverse [0..(depth world)-1]
-      case Map.lookup (Coord column row layer) (content world) of
-        Nothing    -> return $ return ()
-        Just xs -> return $ traverse_ (\bt -> copy renderer (texture bt) Nothing (Just $ toRenderer (WorldCoords $ Rectangle (P (V2 (200*column) (heightInPixel - layer * 80 - row * 160))) (V2 214 354)))) xs
+  let heightInPixel = (height world - 1) * 80 + (depth world - 1) * 160
+   in sequence_ $ do
+        layer <- [0 .. height world - 1]
+        column <- [0 .. width world - 1]
+        row <- reverse [0 .. depth world - 1]
+        case Map.lookup (Coord column row layer) (content world) of
+          Nothing -> return $ return ()
+          Just xs ->
+            return $
+            traverse_
+              (\bt ->
+                 copy
+                   renderer
+                   (texture bt)
+                   Nothing
+                   (Just $
+                    toRenderer
+                      (WorldCoords $
+                       Rectangle (P (V2 (200 * column) (heightInPixel - layer * 80 - row * 160))) (V2 214 354))))
+              xs
   where
-    toRenderer r = let (RendererCoords r2) = scaleToRenderer (worldSize world) r rsize in r2
+    toRenderer r =
+      let (RendererCoords r2) = testtesttest (worldSize world) r rsize
+       in r2
 
 worldSize :: World -> WorldSize
 worldSize (World w d h _) = WorldSize $ V2 (w*214) (354+(d-1)*160+(h-1)*80)
@@ -59,8 +78,8 @@ newtype WorldSize = WorldSize (V2 CInt)
 newtype RendererCoords = RendererCoords (Rectangle CInt)
 newtype WorldCoords = WorldCoords (Rectangle CInt)
 
-scaleToRenderer :: WorldSize -> WorldCoords -> RendererSize -> RendererCoords
-scaleToRenderer (WorldSize    (V2 wwidth wheight))
+testtesttest :: WorldSize -> WorldCoords -> RendererSize -> RendererCoords
+testtesttest (WorldSize    (V2 wwidth wheight))
                 (WorldCoords  (Rectangle (P (V2 wx wy)) (V2 width height)))
                 (RendererSize (Rectangle (P (V2 roffx roffy)) (V2 rwidth rheight)))
                 = let scalex  = fromIntegral rwidth / fromIntegral wwidth
@@ -71,7 +90,7 @@ scaleToRenderer (WorldSize    (V2 wwidth wheight))
                       sheight = scale scaley height
                   in RendererCoords $ Rectangle (P (V2 (sx+roffx) (sy+roffy))) (V2 swidth sheight)
   where
-    scale = myScale 
+    scale = myScale
 
 myScale :: Double -> CInt -> CInt
 myScale f i = truncate $ f * fromIntegral i
@@ -130,10 +149,10 @@ coordFree m c = case Map.lookup c m of
   _ -> False
 
 coordBox :: Map Coord [Block] -> Coord -> Bool
-coordBox m c = maybe False id $ (Rock `elem`) <$> Map.lookup c m 
+coordBox m c = maybe False (Rock `elem`) (Map.lookup c m)
 
 keypressEvent :: Keycode -> (GameState -> GameState) -> Event -> GameState -> GameState
-keypressEvent kc fun = \event gs -> case eventPayload event of
+keypressEvent kc fun event gs = case eventPayload event of
   (KeyboardEvent (KeyboardEventData _ Pressed _ (Keysym _ kc2 _)))
        | kc2 == kc -> fun gs
        | otherwise -> gs
@@ -199,7 +218,7 @@ movePlayer d gs@GameState{..} = gs { world = world { content = doIt }, moves = m
        doIt :: Map Coord [Block]
        doIt = case (coordFree m nPos, coordBox m nPos, coordFree m nnPos) of
                      (True, _, _) -> movePrincess m
-                     (False, True, True) -> moveBox . movePrincess $ m 
+                     (False, True, True) -> moveBox . movePrincess $ m
                      _ -> m
 
        doItMoves :: Int
@@ -215,16 +234,15 @@ left = keypressEvent KeycodeLeft (movePlayer Main.Left)
 right = keypressEvent KeycodeRight (movePlayer Main.Right)
 
 renderWin :: Font.Font -> IO Surface
-renderWin font = do
-  Font.blended font (V4 255 255 0 255) "WIN!"
-  
+renderWin font = Font.blended font (V4 255 255 0 255) "WIN!"
+
 getRendererSize :: WorldSize -> CInt -> CInt -> CInt -> RendererSize
 getRendererSize (WorldSize (V2 wwidth wheight)) woffx width height =
   let scalex = fromIntegral width / fromIntegral wwidth
       scaley = fromIntegral height / fromIntegral wheight
       scale  = min scalex scaley
-      cwidth = myScale scale wwidth 
-      cheight = myScale scale wheight 
+      cwidth = myScale scale wwidth
+      cheight = myScale scale wheight
       woffx2 = abs (cwidth - width) `div` 2
       woffy2 = abs (cheight - height) `div` 2
   in RendererSize (Rectangle (P (V2 (woffx + woffx2) woffy2)) (V2 cwidth cheight))
@@ -253,66 +271,78 @@ centerRectangle (V2 sw sh)
       wy = (th - scaledy) `div` 2
   in mkRect (tx+wx) (ty+wy) scaledx scaledy
 
+myPPrint :: (Show a, MonadIO m) => a -> m ()
+myPPrint = pPrintNoColor
+
+tryRenderDriver :: Window -> (CInt, RendererInfo) -> IO (Maybe Renderer)
+tryRenderDriver window (idx, info) = catch (do
+        putStrLn "trying driver:"
+        myPPrint info
+        renderer <- createRenderer window idx defaultRenderer
+        return (Just renderer))
+        (\e -> do
+                  putStrLn ("couldn't load driver number "  ++ show idx ++ ":")
+                  myPPrint (e :: SomeException)
+                  return Nothing)
+
+getRenderer :: Window -> IO Renderer
+getRenderer window = do
+  drivers <- zip [0 ..] <$> getRenderDriverInfo
+  maybeRenderer <- firstJustM (tryRenderDriver window) drivers
+  case maybeRenderer of
+    (Just renderer) -> return renderer
+    Nothing -> do
+      hPutStrLn stderr ("None of " ++ show (length drivers) ++ " was loadable.")
+      exitFailure
+
 main :: IO ()
 main = do
   initializeAll
   Font.initialize
   window <- createWindow "planetcutetest" defaultWindow {windowResizable = True}
-  renderer <- createRenderer window (-1) defaultRenderer
+  renderer <- getRenderer window
   levels <- readLevels "levels.txt"
   datapath <- Paths.getDataDir
   stonetexture <- loadTexture renderer (datapath </> "images" </> "stoneblock.png")
   grasstexture <- loadTexture renderer (datapath </> "images" </> "grassblock.png")
   watertexture <- loadTexture renderer (datapath </> "images" </> "waterblock.png")
-  rocktexture <-  loadTexture renderer (datapath </> "images" </> "rock.png")
-  selectortexture <-  loadTexture renderer (datapath </> "images" </> "selector.png")
-  startexture <-  loadTexture renderer (datapath </> "images" </> "yellow-star.png")
+  rocktexture <- loadTexture renderer (datapath </> "images" </> "rock.png")
+  selectortexture <- loadTexture renderer (datapath </> "images" </> "selector.png")
+  startexture <- loadTexture renderer (datapath </> "images" </> "yellow-star.png")
   princess <- loadTexture renderer (datapath </> "images" </> "Princess.png")
   font <- Font.load (datapath </> "fonts" </> "overpass-extrabold.otf") 96
-
   -- :levelRenderTexture <- createTexture renderer RGB888 TextureAccessTarget (V2 x y)
-
-  let startGameState = GameState { levelSet = levels 
-                                 , actualLevel = 0
-                                 , world = level2World $ levels !! 0
-                                 , moves = 0
-                                 }
+  let startGameState = GameState {levelSet = levels, actualLevel = 0, world = level2World $ head levels, moves = 0}
   (V2 width height) <- get $ windowSize window
-
   appLoop startGameState $ \event gs' -> do
-    let gs = foldl' (flip ($)) gs' (map ($ event)
-                                   [ nextLevel
-                                   , prevLevel
-                                   , reloadLevel
-                                   , up
-                                   , down
-                                   , right
-                                   , left
-                                   ]) -- way to clever and ugly
-
+    let gs = foldl' (flip ($)) gs' (map ($ event) [nextLevel, prevLevel, reloadLevel, up, down, right, left]) -- way to clever and ugly
     (V2 wwidth wheight) <- get $ windowSize window
-    let rsize = getRendererSize (worldSize (world gs)) (myScale (1/4) wwidth) (myScale (3/4) wwidth) wheight
-
+    let rsize = getRendererSize (worldSize (world gs)) (myScale (1 / 4) wwidth) (myScale (3 / 4) wwidth) wheight
     clear renderer
-    rendererDrawColor renderer $= (V4 255 0 0 255)
-
-    renderInfo font renderer (actualLevel gs) (length (levelSet gs)) (moves gs) (mkRect 0 0 (myScale (1/4) wwidth) wheight)
-
-    rendererDrawColor renderer $= (V4 0 0 0 255)
-    drawWorld renderer rsize (\x -> case x of
-                                Stone -> stonetexture
-                                Water -> watertexture
-                                Grass -> grasstexture
-                                Princess -> princess
-                                Rock -> rocktexture
-                                Star -> startexture
-                                Selector -> selectortexture)
-              (world gs)
-
+    rendererDrawColor renderer $= V4 255 0 0 255
+    renderInfo
+      font
+      renderer
+      (actualLevel gs)
+      (length (levelSet gs))
+      (moves gs)
+      (mkRect 0 0 (myScale (1 / 4) wwidth) wheight)
+    rendererDrawColor renderer $= V4 0 0 0 255
+    drawWorld
+      renderer
+      rsize
+      (\case
+         Stone -> stonetexture
+         Water -> watertexture
+         Grass -> grasstexture
+         Princess -> princess
+         Rock -> rocktexture
+         Star -> startexture
+         Selector -> selectortexture)
+      (world gs)
     when (checkWin gs) $ do
-       s <- renderWin font 
-       t <- createTextureFromSurface renderer s
-       copy renderer t Nothing Nothing
-
+      s <- renderWin font
+      t <- createTextureFromSurface renderer s
+      copy renderer t Nothing Nothing
     present renderer
     return gs

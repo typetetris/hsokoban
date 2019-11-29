@@ -12,7 +12,7 @@ data Element = Wall | Box | Player | GoalSquare deriving (Show, Eq, Ord)
 data Coord2D = Coord2D { x :: Int
                        , y :: Int
                        } deriving (Show, Eq, Ord)
-data Level = Level [(Coord2D, Element)] deriving (Show, Eq, Ord)
+newtype Level = Level [(Coord2D, Element)] deriving (Show, Eq, Ord)
 
 wall :: Parser [Element]
 wall = char '#' >> return [Wall]
